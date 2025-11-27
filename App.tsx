@@ -174,10 +174,16 @@ export default function App() {
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    await storage.saveSettings(settings);
-    setIsLoading(false);
-    setModalMode('settings_saved');
-    setIsModalOpen(true);
+    try {
+        await storage.saveSettings(settings);
+        setModalMode('settings_saved');
+        setIsModalOpen(true);
+    } catch (error) {
+        console.error(error);
+        alert("Erro ao salvar configurações. Verifique se a pasta 'api' no servidor possui permissão de escrita (777).");
+    } finally {
+        setIsLoading(false);
+    }
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -229,18 +235,23 @@ export default function App() {
         active: true
     };
 
-    if (modalMode === 'create') {
-        // Ensure required fields are present for TS
-        if (eventToSave.title && eventToSave.date && eventToSave.location) {
-             await storage.saveEvent(eventToSave);
+    try {
+        if (modalMode === 'create') {
+            // Ensure required fields are present for TS
+            if (eventToSave.title && eventToSave.date && eventToSave.location) {
+                await storage.saveEvent(eventToSave);
+            }
+        } else if (modalMode === 'edit' && eventToSave.id) {
+            await storage.saveEvent(eventToSave);
         }
-    } else if (modalMode === 'edit' && eventToSave.id) {
-        await storage.saveEvent(eventToSave);
+        await refreshData();
+        setIsModalOpen(false);
+    } catch (error) {
+        console.error(error);
+        alert("Erro ao salvar evento. Verifique as permissões do servidor.");
+    } finally {
+        setIsLoading(false);
     }
-
-    await refreshData();
-    setIsLoading(false);
-    setIsModalOpen(false);
   };
 
   const handleDeleteEvent = (id: string) => {
@@ -282,47 +293,57 @@ export default function App() {
       syncedToCrm: false
     };
 
-    // Simulate webhook call
-    const synced = await webhookService.sendToAgendor(newAttendee as Attendee, selectedEvent, settings.webhookUrl);
-    newAttendee.syncedToCrm = synced;
+    try {
+        // Simulate webhook call
+        const synced = await webhookService.sendToAgendor(newAttendee as Attendee, selectedEvent, settings.webhookUrl);
+        newAttendee.syncedToCrm = synced;
 
-    await storage.saveAttendee(newAttendee);
-    await refreshData();
-    setIsLoading(false);
-    
-    setModalMode('success');
+        await storage.saveAttendee(newAttendee);
+        await refreshData();
+        setModalMode('success');
+    } catch (error) {
+        console.error(error);
+        alert("Erro ao realizar inscrição. Tente novamente.");
+    } finally {
+        setIsLoading(false);
+    }
   };
 
   const handleSaveAttendeeAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     
-    if (modalMode === 'attendee_edit' && attendeeEditForm.id) {
-        await storage.saveAttendee(attendeeEditForm);
-    } else if (modalMode === 'attendee_create' && selectedEventId) {
-        const event = events.find(e => e.id === selectedEventId);
-        if (!event) return;
+    try {
+        if (modalMode === 'attendee_edit' && attendeeEditForm.id) {
+            await storage.saveAttendee(attendeeEditForm);
+        } else if (modalMode === 'attendee_create' && selectedEventId) {
+            const event = events.find(e => e.id === selectedEventId);
+            if (!event) return;
 
-        const newAttendee: Partial<Attendee> = {
-            id: crypto.randomUUID(),
-            eventId: selectedEventId,
-            fullName: attendeeEditForm.fullName!,
-            email: attendeeEditForm.email!,
-            phone: attendeeEditForm.phone!,
-            company: attendeeEditForm.company!,
-            registrationDate: new Date().toISOString(),
-            syncedToCrm: false
-        };
+            const newAttendee: Partial<Attendee> = {
+                id: crypto.randomUUID(),
+                eventId: selectedEventId,
+                fullName: attendeeEditForm.fullName!,
+                email: attendeeEditForm.email!,
+                phone: attendeeEditForm.phone!,
+                company: attendeeEditForm.company!,
+                registrationDate: new Date().toISOString(),
+                syncedToCrm: false
+            };
 
-        const synced = await webhookService.sendToAgendor(newAttendee as Attendee, event, settings.webhookUrl);
-        newAttendee.syncedToCrm = synced;
+            const synced = await webhookService.sendToAgendor(newAttendee as Attendee, event, settings.webhookUrl);
+            newAttendee.syncedToCrm = synced;
 
-        await storage.saveAttendee(newAttendee);
+            await storage.saveAttendee(newAttendee);
+        }
+        await refreshData();
+        setIsModalOpen(false);
+    } catch (error) {
+        console.error(error);
+        alert("Erro ao salvar participante. Verifique o servidor.");
+    } finally {
+        setIsLoading(false);
     }
-    
-    await refreshData();
-    setIsLoading(false);
-    setIsModalOpen(false);
   };
 
   const handleCancelRegistration = (id: string) => {
@@ -335,17 +356,22 @@ export default function App() {
     if (!itemToDelete) return;
     setIsLoading(true);
     
-    if (itemToDelete.type === 'event') {
-        await storage.deleteEvent(itemToDelete.id);
-        // Backend handles cascading delete of attendees usually, but good to refresh
-    } else if (itemToDelete.type === 'attendee') {
-         await storage.deleteAttendee(itemToDelete.id);
+    try {
+        if (itemToDelete.type === 'event') {
+            await storage.deleteEvent(itemToDelete.id);
+            // Backend handles cascading delete of attendees usually, but good to refresh
+        } else if (itemToDelete.type === 'attendee') {
+            await storage.deleteAttendee(itemToDelete.id);
+        }
+        await refreshData();
+        setIsModalOpen(false);
+        setItemToDelete(null);
+    } catch (error) {
+        console.error(error);
+        alert("Erro ao excluir item. Verifique o servidor.");
+    } finally {
+        setIsLoading(false);
     }
-    
-    await refreshData();
-    setIsLoading(false);
-    setIsModalOpen(false);
-    setItemToDelete(null);
   };
 
   const exportAttendees = (eventId: string) => {
